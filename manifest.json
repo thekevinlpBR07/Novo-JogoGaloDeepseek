@@ -1,0 +1,48 @@
+﻿{
+    "portraitNames":  [
+                          "neutral",
+                          "happy",
+                          "angry",
+                          "sad",
+                          "surprised"
+                      ],
+    "portraits":  [
+                      "portrait0",
+                      "portrait1",
+                      "portrait2",
+                      "portrait3",
+                      "portrait4"
+                  ],
+    "who":  "bruno",
+    "idle":  {
+                 "down":  "front0",
+                 "up":  "back0",
+                 "side":  "side0"
+             },
+    "walk":  {
+                 "down":  [
+                              "front0",
+                              "front1",
+                              "front2",
+                              "front3"
+                          ],
+                 "up":  [
+                            "back0",
+                            "back1",
+                            "back2",
+                            "back3"
+                        ],
+                 "side":  [
+                              "side0",
+                              "side1",
+                              "side2",
+                              "side3",
+                              "side4",
+                              "side5",
+                              "side6",
+                              "side7",
+                              "side8",
+                              "side9"
+                          ]
+             }
+}
