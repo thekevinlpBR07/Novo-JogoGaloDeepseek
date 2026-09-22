@@ -1,0 +1,10 @@
+.breeding-body h3,.breeding-body h4{color:#e8c383;margin:12px 0 6px}
+.breeding-body>p{font:13px/1.7 Arial;color:#c7cdb5}
+.breeding-slots{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0}
+.breeding-slot{padding:12px;background:#0000001a;border:1px solid #aa895b40;border-radius:4px;text-align:center}
+.breeding-slot p{font-size:14px;color:#f1e2bd;min-height:20px}
+.breeding-slot button,.breeding-picker button{width:auto;display:inline-block;margin:4px;font-size:12px;padding:8px 12px;background:#b9904910;border:1px solid #aa895b70;color:#f1e2bd}
+.breeding-picker{margin-top:10px;padding:10px;border:1px dashed #a4895860}
+.breeding-prediction{margin:10px 0;padding:12px;background:#0000001a;border:1px solid #aa895b40;border-radius:4px}
+.breeding-inbreeding{font-style:italic;color:#e0c98b}
+.breeding-status{color:#9dfbd8}

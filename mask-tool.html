@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Ferramenta de Máscaras — DNA Visual</title>
+<style>
+ *{box-sizing:border-box}
+ body{background:#132018;color:#e9e1c0;font-family:Arial,sans-serif;margin:0;display:flex;height:100vh;overflow:hidden}
+ #sidebar{width:300px;flex:0 0 300px;background:#1c302d;padding:14px;overflow-y:auto;border-right:1px solid #d8ba7580}
+ #stage{flex:1;overflow:auto;position:relative;background:repeating-conic-gradient(#20302a 0% 25%,#182620 0% 50%) 50%/24px 24px}
+ h1{font-size:15px;color:#ffdc91;margin:0 0 10px}
+ h2{font-size:12px;color:#ffdc91;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em}
+ label{display:block;font-size:12px;margin:8px 0 3px;color:#a3ab93}
+ input[type=text],input[type=file],select{width:100%;padding:6px;background:#0000002a;border:1px solid #aa895b60;color:#e9e1c0;font-size:12px}
+ button{width:100%;padding:8px;margin-top:6px;background:#2a3b34;border:1px solid #aa895b60;color:#e9e1c0;font-size:12px;cursor:pointer;border-radius:3px}
+ button:hover{background:#35473f}
+ button.primary{background:#8a6a2a;border-color:#e3c576;color:#12200f;font-weight:bold}
+ button.danger{background:#5a2a22;border-color:#b5544a}
+ .region-item{display:flex;align-items:center;gap:6px;padding:6px 8px;margin-bottom:4px;border:1px solid #aa895b40;border-radius:3px;cursor:pointer;font-size:12px}
+ .region-item.active{border-color:#e3c576;background:#e8c38322}
+ .region-item .swatch{width:14px;height:14px;border-radius:50%;flex:0 0 auto;border:1px solid #0006}
+ .region-item .name{flex:1}
+ .region-item .count{color:#a3ab93;font-size:10px}
+ #canvasWrap{position:relative;display:inline-block}
+ canvas{display:block}
+ #hint{font-size:11px;color:#a3ab93;line-height:1.5;margin-top:4px}
+ #jsonOut{width:100%;height:180px;font-family:monospace;font-size:11px;background:#0000002a;color:#c9e8c3;border:1px solid #aa895b60;padding:6px;margin-top:6px;white-space:pre;overflow:auto}
+ .toolbar{display:flex;gap:6px;padding:8px 14px;background:#1c302dcc;position:sticky;top:0;z-index:5;border-bottom:1px solid #d8ba7540}
+ .toolbar button{width:auto;padding:6px 12px}
+ .zoomrow{display:flex;gap:6px;align-items:center}
+ .zoomrow span{font-size:11px;color:#a3ab93;min-width:38px;text-align:center}
+</style>
+</head>
+<body>
+<div id="sidebar">
+ <h1>Ferramenta de Máscaras — DNA Visual</h1>
+
+ <h2>1. Imagem</h2>
+ <label>Caminho relativo (dentro de /public)</label>
+ <input type="text" id="imgPath" value="assets/plantel/fight/padrao-comum-ereta-01-idle.png">
+ <button id="loadPath">Carregar por caminho</button>
+ <label>ou arquivo local</label>
+ <input type="file" id="imgFile" accept="image/png">
+
+ <h2>2. Regiões</h2>
+ <div id="regionList"></div>
+ <input type="text" id="newRegionName" placeholder="nome da nova região (ex: pescoco)">
+ <button id="addRegion">+ Adicionar região</button>
+
+ <h2>3. Desenhar</h2>
+ <p id="hint">Clique na imagem pra ir adicionando pontos do laço. Clique perto do primeiro ponto (ou aperte Enter) pra fechar. Cada região pode ter vários laços (ex: as duas asas).</p>
+ <button id="undoPoint">Desfazer último ponto</button>
+ <button id="newLoop">Novo laço nesta região</button>
+ <button id="clearRegion" class="danger">Limpar região atual</button>
+
+ <h2>4. Cabeça (opcional, p/ inclinação)</h2>
+ <p id="hint">Clique 2 pontos: canto sup. esquerdo e inf. direito do retângulo da cabeça. Depois clique 1 ponto: o pivô (base do pescoço).</p>
+ <button id="startHeadRect">Marcar retângulo da cabeça</button>
+ <button id="startHeadPivot">Marcar pivô da cabeça</button>
+ <div id="headInfo" style="font-size:11px;color:#a3ab93;margin-top:4px"></div>
+
+ <h2>5. Exportar</h2>
+ <button id="exportBtn" class="primary">Gerar JSON da pose</button>
+ <textarea id="jsonOut" readonly placeholder="O JSON pronto pra colar em POSES aparece aqui."></textarea>
+</div>
+<div id="stage">
+ <div class="toolbar">
+  <div class="zoomrow">
+   <button id="zoomOut">−</button>
+   <span id="zoomLabel">100%</span>
+   <button id="zoomIn">+</button>
+  </div>
+ </div>
+ <div id="canvasWrap">
+  <canvas id="base"></canvas>
+  <canvas id="overlay" style="position:absolute;top:0;left:0"></canvas>
+ </div>
+</div>
+<script>
+const COLORS = ['#ff5555','#55ff88','#5588ff','#ffcc44','#ff55dd','#55ffee','#aa88ff','#ff9944'];
+let img = null, scale = 1;
+let regions = [
+  { name: 'dorso', color: COLORS[0], loops: [[]] },
+  { name: 'peito', color: COLORS[1], loops: [[]] },
+  { name: 'cauda', color: COLORS[2], loops: [[]] },
+];
+let activeRegionIndex = 0;
+let headRect = null, headPivot = null;
+let headMode = null; // null | 'rect1' | 'rect2' | 'pivot'
+let headRectStart = null;
+
+const base = document.getElementById('base');
+const overlay = document.getElementById('overlay');
+const bctx = base.getContext('2d');
+const octx = overlay.getContext('2d');
+
+function loadImageEl(src) {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.onload = () => {
+    img = image;
+    base.width = overlay.width = img.naturalWidth;
+    base.height = overlay.height = img.naturalHeight;
+    applyZoom();
+    draw();
+  };
+  image.onerror = () => alert('Não consegui carregar essa imagem. Confira o caminho (relativo à pasta public/).');
+  image.src = src;
+}
+document.getElementById('loadPath').onclick = () => loadImageEl(document.getElementById('imgPath').value.trim());
+document.getElementById('imgFile').onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  loadImageEl(URL.createObjectURL(file));
+};
+
+function applyZoom() {
+  base.style.width = overlay.style.width = (img.naturalWidth * scale) + 'px';
+  base.style.height = overlay.style.height = (img.naturalHeight * scale) + 'px';
+  document.getElementById('zoomLabel').textContent = Math.round(scale * 100) + '%';
+}
+document.getElementById('zoomIn').onclick = () => { scale = Math.min(3, scale + 0.1); if (img) applyZoom(); };
+document.getElementById('zoomOut').onclick = () => { scale = Math.max(0.1, scale - 0.1); if (img) applyZoom(); };
+
+function renderRegionList() {
+  const list = document.getElementById('regionList');
+  list.innerHTML = '';
+  regions.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'region-item' + (i === activeRegionIndex ? ' active' : '');
+    const totalPts = r.loops.reduce((n, l) => n + l.length, 0);
+    div.innerHTML = `<span class="swatch" style="background:${r.color}"></span><span class="name">${r.name}</span><span class="count">${r.loops.length} laço(s) · ${totalPts} pt</span>`;
+    div.onclick = () => { activeRegionIndex = i; headMode = null; renderRegionList(); draw(); };
+    list.appendChild(div);
+  });
+}
+document.getElementById('addRegion').onclick = () => {
+  const name = document.getElementById('newRegionName').value.trim();
+  if (!name) return;
+  regions.push({ name, color: COLORS[regions.length % COLORS.length], loops: [[]] });
+  document.getElementById('newRegionName').value = '';
+  activeRegionIndex = regions.length - 1;
+  renderRegionList();
+  draw();
+};
+document.getElementById('undoPoint').onclick = () => {
+  const r = regions[activeRegionIndex];
+  const loop = r.loops[r.loops.length - 1];
+  if (loop.length) loop.pop();
+  else if (r.loops.length > 1) r.loops.pop();
+  renderRegionList(); draw();
+};
+document.getElementById('newLoop').onclick = () => {
+  const r = regions[activeRegionIndex];
+  if (r.loops[r.loops.length - 1].length >= 3) r.loops.push([]);
+  renderRegionList(); draw();
+};
+document.getElementById('clearRegion').onclick = () => {
+  if (!confirm('Limpar todos os pontos da região atual?')) return;
+  regions[activeRegionIndex].loops = [[]];
+  renderRegionList(); draw();
+};
+
+document.getElementById('startHeadRect').onclick = () => { headMode = 'rect1'; headRectStart = null; alert('Clique no canto superior-esquerdo da cabeça, depois no canto inferior-direito.'); };
+document.getElementById('startHeadPivot').onclick = () => { headMode = 'pivot'; alert('Clique no ponto onde a cabeça encontra o pescoço (o pivô de rotação).'); };
+
+function canvasPointFromEvent(e) {
+  const rect = overlay.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / scale;
+  const y = (e.clientY - rect.top) / scale;
+  return [Math.round(x), Math.round(y)];
+}
+
+overlay.addEventListener('click', e => {
+  if (!img) return;
+  const [x, y] = canvasPointFromEvent(e);
+  if (headMode === 'rect1') {
+    headRectStart = [x, y];
+    headMode = 'rect2';
+    return;
+  }
+  if (headMode === 'rect2') {
+    headRect = [Math.min(headRectStart[0], x), Math.min(headRectStart[1], y), Math.abs(x - headRectStart[0]), Math.abs(y - headRectStart[1])];
+    headMode = null;
+    updateHeadInfo();
+    draw();
+    return;
+  }
+  if (headMode === 'pivot') {
+    headPivot = [x, y];
+    headMode = null;
+    updateHeadInfo();
+    draw();
+    return;
+  }
+  const r = regions[activeRegionIndex];
+  const loop = r.loops[r.loops.length - 1];
+  // Fecha o laco se clicar perto do primeiro ponto (raio 10px na tela).
+  if (loop.length >= 3) {
+    const [fx, fy] = loop[0];
+    if (Math.hypot(fx - x, fy - y) * scale < 10) {
+      r.loops.push([]);
+      renderRegionList(); draw();
+      return;
+    }
+  }
+  loop.push([x, y]);
+  renderRegionList();
+  draw();
+});
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !img) return;
+  const r = regions[activeRegionIndex];
+  const loop = r.loops[r.loops.length - 1];
+  if (loop.length >= 3) r.loops.push([]);
+  renderRegionList(); draw();
+});
+
+function updateHeadInfo() {
+  const el = document.getElementById('headInfo');
+  el.textContent = (headRect ? `rect: [${headRect.join(', ')}]` : 'rect: —') + '\n' + (headPivot ? `pivot: [${headPivot.join(', ')}]` : 'pivot: —');
+}
+
+function draw() {
+  if (!img) return;
+  bctx.clearRect(0, 0, base.width, base.height);
+  bctx.drawImage(img, 0, 0);
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  regions.forEach((r, ri) => {
+    octx.fillStyle = r.color + (ri === activeRegionIndex ? '55' : '30');
+    octx.strokeStyle = r.color;
+    octx.lineWidth = 2 / scale;
+    r.loops.forEach(loop => {
+      if (loop.length < 2) {
+        loop.forEach(([x, y]) => { octx.beginPath(); octx.arc(x, y, 4 / scale, 0, Math.PI * 2); octx.fillStyle = r.color; octx.fill(); });
+        return;
+      }
+      octx.beginPath();
+      loop.forEach(([x, y], i) => i === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y));
+      if (loop.length > 2) octx.closePath();
+      octx.fillStyle = r.color + (ri === activeRegionIndex ? '55' : '30');
+      octx.fill();
+      octx.stroke();
+      loop.forEach(([x, y]) => { octx.beginPath(); octx.arc(x, y, 3 / scale, 0, Math.PI * 2); octx.fillStyle = r.color; octx.fill(); });
+    });
+  });
+  if (headRect) { octx.strokeStyle = '#fff'; octx.lineWidth = 2 / scale; octx.strokeRect(...headRect); }
+  if (headPivot) { octx.fillStyle = '#fff'; octx.beginPath(); octx.arc(headPivot[0], headPivot[1], 5 / scale, 0, Math.PI * 2); octx.fill(); }
+}
+
+document.getElementById('exportBtn').onclick = () => {
+  const regionsObj = {};
+  for (const r of regions) {
+    const loops = r.loops.filter(l => l.length >= 3);
+    if (loops.length) regionsObj[r.name] = loops;
+  }
+  const out = {
+    shape: 'polygon',
+    regions: regionsObj,
+    head: headRect && headPivot ? { rect: headRect, pivot: headPivot } : undefined,
+  };
+  document.getElementById('jsonOut').value = JSON.stringify(out, null, 1);
+};
+
+renderRegionList();
+loadImageEl(document.getElementById('imgPath').value.trim());
+</script>
+</body>
+</html>

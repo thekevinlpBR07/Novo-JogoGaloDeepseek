@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 6,
+  "build": "0.2.5",
+  "money": 1250,
+  "energy": 100,
+  "hunger": 0,
+  "player": {
+    "x": 302,
+    "y": 295
+  },
+  "inventory": {
+    "items": {
+      "radishSeed": 4,
+      "cornSeed": 4,
+      "feed": 12
+    }
+  },
+  "clock": {
+    "day": 1,
+    "minutes": 480,
+    "period": "morning",
+    "fractionMs": 0,
+    "needMinutes": 0,
+    "lastSleptDay": 0
+  },
+  "story": {
+    "chapter": 0,
+    "stage": "arrival"
+  },
+  "events": {
+    "flags": {},
+    "records": {}
+  },
+  "world": {
+    "room": "yard",
+    "objects": {
+      "yardSupplies": true,
+      "lastMealDay": 0
+    },
+    "map": {
+      "id": "quintal",
+      "revision": 1,
+      "tiles": {},
+      "entities": {}
+    }
+  },
+  "npcs": {
+    "friend": {
+      "id": "friend",
+      "met": false
+    }
+  },
+  "agriculture": {
+    "plots": {
+      "plot1": {
+        "prepared": false,
+        "crop": null,
+        "growth": 0,
+        "wateredDay": null,
+        "cycle": 0
+      },
+      "plot2": {
+        "prepared": false,
+        "crop": null,
+        "growth": 0,
+        "wateredDay": null,
+        "cycle": 0
+      },
+      "plot3": {
+        "prepared": false,
+        "crop": null,
+        "growth": 0,
+        "wateredDay": null,
+        "cycle": 0
+      },
+      "plot4": {
+        "prepared": false,
+        "crop": null,
+        "growth": 0,
+        "wateredDay": null,
+        "cycle": 0
+      }
+    },
+    "daily": {
+      "day": 1,
+      "prepared": 0,
+      "planted": 0,
+      "watered": 0,
+      "fed": 0,
+      "collected": 0,
+      "harvested": 0
+    },
+    "lastSummary": null
+  },
+  "chickens": {
+    "byId": {
+      "hen1": {
+        "id": "hen1",
+        "fedDay": null,
+        "eggs": 1,
+        "lastProducedDay": 0
+      },
+      "hen2": {
+        "id": "hen2",
+        "fedDay": null,
+        "eggs": 1,
+        "lastProducedDay": 0
+      },
+      "hen3": {
+        "id": "hen3",
+        "fedDay": null,
+        "eggs": 1,
+        "lastProducedDay": 0
+      }
+    }
+  },
+  "roosters": {
+    "byId": {}
+  },
+  "trainings": {
+    "active": null,
+    "history": []
+  },
+  "relationships": {},
+  "unlocks": {},
+  "quests": {
+    "firstSteps": {
+      "status": "active",
+      "steps": {
+        "friend": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "coop": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "garden": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        }
+      },
+      "rewardGranted": false
+    },
+    "yardCare": {
+      "status": "active",
+      "steps": {
+        "prepare": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "plant": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "water": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "feed": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "collect": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        },
+        "harvest": {
+          "complete": false,
+          "progress": [
+            0
+          ]
+        }
+      },
+      "rewardGranted": false
+    }
+  }
+}

@@ -1,0 +1,11 @@
+.training-body>p{font:13px/1.7 Arial;color:#c7cdb5}
+.training-row{padding:10px;margin:8px 0;background:#0000001a;border:1px solid #aa895b40;border-radius:4px}
+.training-row h4{color:#e8c383;margin:0 0 2px;display:inline-block}
+.training-row small{color:#a3ab93;margin-left:8px}
+.training-bar{margin:6px 0}
+.training-bar progress{width:100%;height:10px}
+.training-row button{width:auto;display:inline-block;margin-top:4px;font-size:12px;padding:8px 12px;background:#b9904910;border:1px solid #aa895b70;color:#f1e2bd}
+.training-zone{width:100%;min-height:140px;font-size:26px;font-weight:bold;border-radius:6px;margin-top:16px;background:#30483b;color:#e9d9b5;border:2px solid #b9b08a55}
+.training-zone-go{background:#3f8f4f;color:#fff}
+.training-zone-early{background:#8f3f3f;color:#fff}
+.training-zone-hit{background:#3f6f8f;color:#fff}

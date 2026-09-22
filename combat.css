@@ -1,0 +1,33 @@
+.fight-portrait{display:block;margin:0 auto 8px;background:radial-gradient(ellipse at center,#2c3a2a 0%,#1a2318 100%);border-radius:6px}
+.fight-portrait-hit{box-shadow:inset 0 0 0 4px #e0808066,0 0 24px #e0808055}
+.fight-callout{text-align:center;font-weight:bold;font-size:15px;min-height:20px}
+.fight-callout-player{color:#8be08b}
+.fight-callout-rival{color:#e08b8b}
+.fight-body h3{color:#e8c383;font-size:15px;margin:16px 0 8px}
+.fight-body>p{font:13px/1.7 Arial;color:#c7cdb5}
+.fight-choice-row{display:flex;flex-wrap:wrap;gap:8px}
+.fight-choice-row button{width:auto;display:inline-block;margin:0;font-size:12px;padding:8px 12px;background:#b9904910;border:1px solid #aa895b70;color:#f1e2bd}
+.fight-choice-row button[aria-pressed="true"]{background:#e8c38333;border-color:#e8c383;color:#ffdc91}
+.fight-start{margin-top:18px;width:100%;background:#e8c383;color:#1f2f22;font-weight:bold;font-size:15px}
+.fight-stats-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0}
+.fight-stats{padding:12px;background:#0000001a;border:1px solid #aa895b40;border-radius:4px}
+.fight-stats h4{color:#f5d18a;font-size:13px;margin:0 0 8px}
+.fight-bar{display:flex;align-items:center;gap:8px;font:12px/1.4 Arial;margin:4px 0}
+.fight-bar span{width:80px;flex:none;color:#c9d1b7}
+.fight-bar progress{flex:1;height:10px}
+.fight-scouted{color:#9dfbd8;font-style:italic}
+.fight-scouted .fight-bar span{width:110px}
+.fight-techniques{color:#e0c98b;font-size:12px;font-style:italic}
+.fight-mood{color:#c9a2e0;font-style:italic}
+.fight-result-title{font-size:26px}
+.fight-result-win{color:#8be08b}
+.fight-result-lose{color:#e08b8b}
+.fight-result-draw{color:#e0d38b}
+.fight-payout{font-weight:bold}
+.fight-payout-win{color:#8be08b}
+.fight-payout-lose{color:#e08b8b}
+.fight-reputation{color:#c9a2e0;font-weight:bold}
+#plantelButton{background:#7a2c2c;color:#f8e9c7}
+@media(max-width:720px){.fight-stats-row{grid-template-columns:1fr}}
+
+.fight-narrator{font-style:italic;color:#e5d7ad;margin:.5rem 0;padding:.4rem .6rem;border-left:3px solid #d9bd6e;background:rgba(0,0,0,.18)}

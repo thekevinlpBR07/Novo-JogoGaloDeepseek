@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prototipo DNA Visual</title>
+<style>
+ body{background:#132018;color:#e9e1c0;font-family:Arial,sans-serif;padding:16px}
+ h1{font-size:18px;color:#ffdc91;margin-bottom:4px}
+ h2{font-size:15px;color:#ffdc91;margin:26px 0 8px;border-top:1px solid #d8ba7540;padding-top:16px}
+ p.hint{color:#a3ab93;font-size:13px;margin:2px 0 12px}
+ .grid{display:flex;flex-wrap:wrap;gap:14px}
+ .card{background:#1c302d;border:1px solid #d8ba7580;border-radius:6px;padding:8px;width:220px;text-align:center}
+ .card.parent{border-color:#e3c576}
+ .poses{display:flex;gap:4px;justify-content:center}
+ .card canvas{width:96px;height:190px;background:#0a0f0c;border-radius:4px}
+ .card.single canvas{width:200px;height:200px}
+ .card small{display:block;margin-top:6px;color:#a3ab93;line-height:1.5;text-align:left}
+ .masks{display:flex;gap:10px;margin:14px 0;flex-wrap:wrap}
+ .masks div{text-align:center}
+ .masks canvas{width:130px;height:130px;background:#333}
+ img.hidden-src{display:none}
+</style>
+</head>
+<body>
+<h1>Protótipo: DNA visual por região, entre poses e por herança</h1>
+<p id="status" class="hint">Carregando...</p>
+
+<h2>1. Mesma região em duas poses diferentes (idle vs. guarda defensiva)</h2>
+<p class="hint">Se a técnica funciona, cada galo deve ficar reconhecível como o MESMO indivíduo nas duas colunas.</p>
+<div class="masks" id="masks"></div>
+<div class="grid" id="gridPoses"></div>
+
+<h2>2. Herança: pai + mãe → 4 filhotes (mesma pose idle)</h2>
+<p class="hint">Cor final de cada filhote = média dos pais + mutação aleatória por gene. Nenhum filhote é sorteado do zero.</p>
+<div class="grid" id="gridBreeding"></div>
+
+<h2>3. Mesmo esquema aplicado a outra anatomia (galo "topo de linha") + porte físico</h2>
+<p class="hint">Prova que a técnica não é exclusiva de uma arte só, e que altura/robustez variam sem distorcer a pose (escala ancorada na base das patas).</p>
+<div class="grid" id="gridTop"></div>
+
+<img id="srcIdle" class="hidden-src" src="assets/plantel/fight/padrao-comum-ereta-01-idle.png" crossorigin="anonymous">
+<img id="srcGuarda" class="hidden-src" src="assets/plantel/fight/padrao-comum-ereta-02-guarda-defensiva.png" crossorigin="anonymous">
+<img id="srcTop" class="hidden-src" src="dna-proto-assets/galo-top-idle.png" crossorigin="anonymous">
+<script>
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h, s, l = (max + min) / 2;
+  if (max === min) { h = s = 0; }
+  else {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4;
+    }
+    h /= 6;
+  }
+  return [h, s, l];
+}
+function hue2rgb(p, q, t) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1 / 6) return p + (q - p) * 6 * t;
+  if (t < 1 / 2) return q;
+  if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+  return p;
+}
+function hslToRgb(h, s, l) {
+  if (s === 0) { const v = l * 255; return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [hue2rgb(p, q, h + 1 / 3) * 255, hue2rgb(p, q, h) * 255, hue2rgb(p, q, h - 1 / 3) * 255];
+}
+function hexToRgb(hex) { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+function rgbToHex(r, g, b) { return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join(''); }
+
+// PRNG seedado (mulberry32) - toda variacao procedural do DNA usa isso, nunca Math.random,
+// pra garantir que o mesmo individuo sempre renderize identico entre save/load.
+function mulberry32(seed) {
+  return function () {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function rectMask(ctx, w, h, rects) {
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  const mask = new Uint8Array(w * h);
+  for (const [rx, ry, rw, rh] of rects) {
+    for (let y = Math.max(0, ry); y < Math.min(h, ry + rh); y++) {
+      for (let x = Math.max(0, rx); x < Math.min(w, rx + rw); x++) {
+        const i = y * w + x;
+        if (px[i * 4 + 3] > 20) mask[i] = 255;
+      }
+    }
+  }
+  return mask;
+}
+
+// Mascara por poligono livre (lista de [x,y]) em vez de retangulo - segue a
+// silhueta de verdade em vez de cortar quina reta. E o formato mais proximo
+// do que a ferramenta interna real desenharia (um "laco" a mao livre em volta
+// da regiao), so que aqui com pontos fixos calibrados a olho.
+function polygonMask(ctx, w, h, polygons) {
+  const shape = document.createElement('canvas');
+  shape.width = w; shape.height = h;
+  const sctx = shape.getContext('2d');
+  sctx.fillStyle = '#fff';
+  for (const points of polygons) {
+    sctx.beginPath();
+    points.forEach(([x, y], i) => i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y));
+    sctx.closePath();
+    sctx.fill();
+  }
+  const shapeData = sctx.getImageData(0, 0, w, h).data;
+  const alphaData = ctx.getImageData(0, 0, w, h).data;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (shapeData[i * 4 + 3] > 20 && alphaData[i * 4 + 3] > 20) mask[i] = 255;
+  }
+  return mask;
+}
+
+// Recolore preservando luminancia (mantem pincelada/sombra pintada original).
+// O mask agora e "graduado" (0-255, nao so 0/255): cada pixel usa sua propria
+// forca de mistura (strength), o que permite bordas suaves (usado tanto pelas
+// mascaras de regiao quanto pelas manchas do padrao malhado abaixo).
+function recolorRegion(ctx, w, h, mask, targetHex, intensity = 0.85) {
+  const targetRgb = hexToRgb(targetHex);
+  const [th, ts] = rgbToHsl(targetRgb[0], targetRgb[1], targetRgb[2]);
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue;
+    const strength = (mask[i] / 255) * intensity;
+    const pi = i * 4;
+    const [, , l] = rgbToHsl(px[pi], px[pi + 1], px[pi + 2]);
+    const [nr, ng, nb] = hslToRgb(th, ts, l);
+    px[pi] = px[pi] * (1 - strength) + nr * strength;
+    px[pi + 1] = px[pi + 1] * (1 - strength) + ng * strength;
+    px[pi + 2] = px[pi + 2] * (1 - strength) + nb * strength;
+  }
+  ctx.putImageData(data, 0, 0);
+}
+
+// Manchas do padrao "malhado": em vez de pintar um blob de cor lisa por cima
+// (que apagava a textura da pena), gera uma mascara graduada de manchas
+// ovais com borda suave e reaproveita recolorRegion - assim a mancha preserva
+// a pincelada/sombra original, so troca a cor, igual as regioes principais.
+// Mistura a cor-alvo de verdade (nao so matiz/saturacao preservando o brilho
+// original) - certo pra manchas brancas/cremes, que precisam de luminancia
+// PROPRIA. Uma mancha clara num peito escuro tem que ficar clara de verdade;
+// se so trocasse a matiz preservando o brilho escuro do pixel (como
+// recolorRegion faz pro corpo), a "mancha branca" saia cinza-escura e some.
+function blendSpots(ctx, w, h, mask, colorHex) {
+  const [r, g, b] = hexToRgb(colorHex);
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  for (let i = 0; i < w * h; i++) {
+    if (!mask[i]) continue;
+    const a = mask[i] / 255;
+    const pi = i * 4;
+    px[pi] = px[pi] * (1 - a) + r * a;
+    px[pi + 1] = px[pi + 1] * (1 - a) + g * a;
+    px[pi + 2] = px[pi + 2] * (1 - a) + b * a;
+  }
+  ctx.putImageData(data, 0, 0);
+}
+
+// style 'malhado' = manchas grandes ovais organicas (poucas, ~15-30px).
+// style 'carijo'  = pintas pequenas e redondas, bem mais numerosas (~4-9px) -
+// mesma tecnica, so muda a distribuicao de tamanho/formato/quantidade.
+function patternMask(w, h, baseMask, seed, count, style = 'malhado') {
+  const rng = mulberry32(seed);
+  const mask = new Uint8Array(w * h);
+  let minX = w, minY = h, maxX = 0, maxY = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (baseMask[y * w + x]) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  if (maxX < minX) return mask;
+  for (let s = 0; s < count; s++) {
+    const cx = minX + rng() * (maxX - minX);
+    const cy = minY + rng() * (maxY - minY);
+    let rx, ry;
+    if (style === 'carijo') { rx = 4 + rng() * 5; ry = rx * (0.85 + rng() * 0.3); }
+    else { rx = 10 + rng() * 22; ry = rx * (0.6 + rng() * 0.5); }
+    const rot = rng() * Math.PI;
+    const cosR = Math.cos(rot), sinR = Math.sin(rot);
+    for (let y = Math.max(0, cy - rx - ry); y < Math.min(h, cy + rx + ry); y++) {
+      for (let x = Math.max(0, cx - rx - ry); x < Math.min(w, cx + rx + ry); x++) {
+        const i = Math.floor(y) * w + Math.floor(x);
+        if (!baseMask[i]) continue;
+        const dx = x - cx, dy = y - cy;
+        const localX = dx * cosR + dy * sinR, localY = -dx * sinR + dy * cosR;
+        const d = Math.hypot(localX / rx, localY / ry);
+        if (d > 1) continue;
+        const strength = Math.round((1 - d) * 255); // borda suave, centro mais forte
+        mask[i] = Math.max(mask[i], strength);
+      }
+    }
+  }
+  return mask;
+}
+
+// --- Definicao das poses e regioes calibradas visualmente para cada uma -----
+// Cada pose tem seu proprio recorte por regiao, porque a anatomia se move
+// (asa aberta na guarda defensiva cobre a caixa toracica de outro jeito que
+// no idle). E exatamente o custo "uma mascara por regiao por pose" descrito
+// na analise: aqui sao so 2 poses x 3 regioes = 6 mascaras, no jogo real
+// seriam 20 poses x ~6 regioes = ~120.
+const POSES = {
+  idle: {
+    src: 'srcIdle',
+    shape: 'polygon',
+    regions: {
+      dorso: [[[610, 380], [890, 400], [900, 500], [840, 630], [700, 660], [590, 560], [570, 450]]],
+      peito: [[[560, 610], [830, 630], [840, 790], [770, 900], [610, 900], [530, 760]]],
+      cauda: [[[240, 480], [560, 540], [560, 640], [430, 800], [260, 900], [160, 700]]],
+    },
+    // Recorte da cabeca+pescoco e o ponto (base do pescoco) onde ela gira -
+    // usado pra simular "expressao"/personalidade sem desenhar olho/bico novos
+    // (inclinacao da cabeca: cocking pra cima = altivo, pra baixo = cansado).
+    head: { rect: [700, 20, 300, 320], pivot: [770, 330] },
+  },
+  guarda: {
+    src: 'srcGuarda',
+    // Fica retangulo mesmo: tentei converter pra poligono de memoria (sem
+    // reconferir a imagem) e o recorte do dorso vazou pra pele da cabeca,
+    // pintando o rosto de rosa. Poligono so vale a pena com coordenada
+    // conferida de verdade contra a imagem, nao chutada. Conferi a imagem de
+    // novo (1254x1254): o rect antigo do dorso comecava em y=150, que ja
+    // pega o rosto/crista (y:100-330) - por isso vazava mesmo sem poligono.
+    // Corrigido pra comecar em y=370, abaixo da cabeca.
+    shape: 'rect',
+    regions: {
+      dorso: [[520, 370, 680, 410]],
+      peito: [[480, 650, 380, 300]],
+      cauda: [[80, 470, 380, 400]],
+    },
+    head: { rect: [780, 60, 340, 300], pivot: [900, 340] },
+  },
+  top: {
+    src: 'srcTop',
+    shape: 'polygon',
+    regions: {
+      dorso: [[[830, 380], [1080, 420], [1090, 560], [980, 700], [800, 700], [760, 520]]],
+      peito: [[[760, 650], [990, 680], [1000, 880], [900, 1020], [720, 1000], [700, 800]]],
+      cauda: [[[130, 500], [700, 560], [680, 700], [480, 950], [220, 1080], [90, 800]]],
+    },
+    head: { rect: [800, 20, 320, 330], pivot: [870, 340] },
+  },
+};
+
+// Gira o recorte da cabeca em torno do ponto onde ela encontra o pescoco.
+// Copia o pedaco, apaga a area original (fica transparente) e redesenha
+// rotacionado - assim a "expressao" muda sem tocar em nenhum pixel do corpo.
+function featherEllipse(w, h, margin) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const fx = c.getContext('2d');
+  fx.filter = 'blur(18px)';
+  fx.fillStyle = '#fff';
+  fx.beginPath();
+  fx.ellipse(w / 2, h / 2, w / 2 - margin, h / 2 - margin, 0, 0, Math.PI * 2);
+  fx.fill();
+  return c;
+}
+function applyHeadTilt(ctx, w, h, headCfg, angleDeg) {
+  if (!headCfg || !angleDeg) return;
+  const [rx, ry, rw, rh] = headCfg.rect;
+  const [px, py] = headCfg.pivot;
+
+  // 1) Recorta a cabeca e suaviza a borda (elipse com blur) - sem isso o corte
+  // reto do retangulo fica visivel contra a textura organica da pena.
+  const crop = document.createElement('canvas');
+  crop.width = rw; crop.height = rh;
+  const cctx = crop.getContext('2d');
+  cctx.drawImage(ctx.canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+  cctx.globalCompositeOperation = 'destination-in';
+  cctx.drawImage(featherEllipse(rw, rh, 14), 0, 0);
+  cctx.globalCompositeOperation = 'source-over';
+
+  // 2) Remove SO a area suave (mesma elipse, na posicao original) do desenho
+  // base - nao o retangulo inteiro - pra nao deixar buraco quadrado onde a
+  // elipse nao cobria (aquele canto ja fazia parte do pescoco/corpo).
+  ctx.save();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(featherEllipse(rw, rh, 14), rx, ry);
+  ctx.restore();
+
+  // 3) Desenha a cabeca recortada de volta, rotacionada em torno do pivo
+  // (base do pescoco).
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angleDeg * Math.PI / 180);
+  ctx.translate(-px, -py);
+  ctx.drawImage(crop, rx, ry);
+  ctx.restore();
+}
+
+function loadImage(id) {
+  return new Promise((resolve, reject) => {
+    const el = document.getElementById(id);
+    if (el.complete && el.naturalWidth) return resolve(el);
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+  });
+}
+
+function buildMasks(img, regions, shape, head) {
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const base = document.createElement('canvas');
+  base.width = w; base.height = h;
+  base.getContext('2d').drawImage(img, 0, 0);
+  const ctx = base.getContext('2d');
+  const masks = {};
+  for (const [region, shapes] of Object.entries(regions)) {
+    masks[region] = shape === 'polygon' ? polygonMask(ctx, w, h, shapes) : rectMask(ctx, w, h, shapes);
+  }
+  return { base, w, h, masks, head };
+}
+
+// Recolore numa copia interna do canvas base (nao no canvas de saida ainda
+// transformado), pra escala de altura/porte nao distorcer o recorte das
+// mascaras - elas foram calibradas no tamanho original da imagem.
+function recoloredBase(poseData, dna) {
+  const { base, w, h, masks, head } = poseData;
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(base, 0, 0);
+  recolorRegion(tctx, w, h, masks.dorso, dna.dorso);
+  recolorRegion(tctx, w, h, masks.peito, dna.peito);
+  recolorRegion(tctx, w, h, masks.cauda, dna.cauda);
+  if (dna.pattern) {
+    const spots = patternMask(w, h, masks.peito, dna.pattern.seed, dna.pattern.count, dna.pattern.style);
+    blendSpots(tctx, w, h, spots, dna.pattern.spot);
+  }
+  if (dna.headTilt) applyHeadTilt(tctx, w, h, head, dna.headTilt);
+  return tmp;
+}
+
+// Porte fisico (altura/robustez) sem precisar de arte nova: escala nao
+// uniforme aplicada no desenho final. heightScale estica/encolhe verticalmente
+// (galo mais alto/baixo), bulkScale estica horizontalmente sem mexer na altura
+// (peito/corpo mais largo = "mais musculoso"), ambos ancorados na base das
+// patas (pivotY perto do chao) pra ave nao flutuar nem afundar no chao ao
+// mudar de tamanho.
+function renderDna(poseData, dna, opts = {}) {
+  const { w, h } = poseData;
+  const heightScale = opts.heightScale ?? dna.heightScale ?? 1;
+  const bulkScale = opts.bulkScale ?? dna.bulkScale ?? 1;
+  const recolored = recoloredBase(poseData, dna);
+  // Margem extra no canvas de saida: um galo "mais alto" (heightScale>1) cresce
+  // pra cima a partir do pivo nas patas e sairia cortado num canvas do mesmo
+  // tamanho da arte original. Cresce a tela em vez de cortar a cabeca.
+  const pad = 1.25;
+  const out = document.createElement('canvas');
+  out.width = Math.ceil(w * pad); out.height = Math.ceil(h * pad);
+  const ctx = out.getContext('2d');
+  const offX = (out.width - w) / 2, offY = out.height - h; // ave ancorada embaixo
+  const pivotX = offX + w / 2, pivotY = offY + h * 0.96;
+  ctx.save();
+  ctx.translate(pivotX, pivotY);
+  ctx.scale(bulkScale, heightScale);
+  ctx.translate(-pivotX, -pivotY);
+  ctx.drawImage(recolored, offX, offY);
+  ctx.restore();
+  return out;
+}
+
+// --- Heranca: cada gene de cor e continuo (RGB), filho = media dos pais no
+// espaco HSL (fica mais natural que media direta de RGB) + ruido gaussiano
+// pequeno (variacao) + chance rara de mutacao maior. -------------------------
+function gaussian(rng) {
+  // Box-Muller a partir de 2 numeros uniformes do PRNG seedado.
+  const u1 = Math.max(rng(), 1e-6), u2 = rng();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+function blendGeneColor(hexA, hexB, rng, mutationChance = 0.06) {
+  const [ha, sa] = rgbToHsl(...hexToRgb(hexA));
+  const [hb, sb] = rgbToHsl(...hexToRgb(hexB));
+  const la = rgbToHsl(...hexToRgb(hexA))[2], lb = rgbToHsl(...hexToRgb(hexB))[2];
+  // Media circular de matiz (hue e um angulo, nao um numero linear comum).
+  const ax = Math.cos(ha * 2 * Math.PI) + Math.cos(hb * 2 * Math.PI);
+  const ay = Math.sin(ha * 2 * Math.PI) + Math.sin(hb * 2 * Math.PI);
+  let h = Math.atan2(ay, ax) / (2 * Math.PI); if (h < 0) h += 1;
+  let s = (sa + sb) / 2, l = (la + lb) / 2;
+  h += gaussian(rng) * 0.02; s += gaussian(rng) * 0.05; l += gaussian(rng) * 0.04;
+  // Mutacao rara: gene "salta" pra um valor novo, mas dentro da paleta natural
+  // de plumagem (vermelho-marrom-dourado, hue 0-0.16 normalizado; preto/cinza
+  // sai gratis com saturacao baixa). Sem isso, mutacao podia sortear roxo/azul
+  // puro, o que quebra a imersao (nao existe galo roxo).
+  if (rng() < mutationChance) { h = rng() * 0.16; s = 0.25 + rng() * 0.55; }
+  h = ((h % 1) + 1) % 1; s = Math.max(0.05, Math.min(0.9, s)); l = Math.max(0.05, Math.min(0.75, l));
+  return rgbToHex(...hslToRgb(h, s, l));
+}
+function blendGeneNumber(a, b, rng, spread = 0.05) {
+  return (a + b) / 2 + gaussian(rng) * spread;
+}
+function gerarFilhote(pai, mae, seed) {
+  const rng = mulberry32(seed);
+  const filho = {
+    dorso: blendGeneColor(pai.dorso, mae.dorso, rng),
+    peito: blendGeneColor(pai.peito, mae.peito, rng),
+    cauda: blendGeneColor(pai.cauda, mae.cauda, rng),
+    pattern: (pai.pattern || mae.pattern) && rng() < 0.5 ? { seed: Math.floor(rng() * 1e6), count: 5, spot: '#EFE6C8' } : null,
+    heightScale: Math.max(0.82, Math.min(1.18, blendGeneNumber(pai.heightScale ?? 1, mae.heightScale ?? 1, rng, 0.05))),
+    bulkScale: Math.max(0.82, Math.min(1.22, blendGeneNumber(pai.bulkScale ?? 1, mae.bulkScale ?? 1, rng, 0.05))),
+    headTilt: Math.max(-10, Math.min(10, blendGeneNumber(pai.headTilt ?? 0, mae.headTilt ?? 0, rng, 3))),
+  };
+  return filho;
+}
+
+(async () => {
+  const [idleImg, guardaImg, topImg] = await Promise.all([loadImage('srcIdle'), loadImage('srcGuarda'), loadImage('srcTop')]);
+  document.getElementById('status').textContent = 'Imagens carregadas. Montando mascaras...';
+
+  const poseData = {};
+  const masksDiv = document.getElementById('masks');
+  const imgByPose = { idle: idleImg, guarda: guardaImg, top: topImg };
+  for (const [poseName, cfg] of Object.entries(POSES)) {
+    const img = imgByPose[poseName];
+    poseData[poseName] = buildMasks(img, cfg.regions, cfg.shape, cfg.head);
+    for (const [region, mask] of Object.entries(poseData[poseName].masks)) {
+      const { w, h } = poseData[poseName];
+      const preview = document.createElement('canvas');
+      preview.width = w; preview.height = h;
+      const pctx = preview.getContext('2d');
+      const previewData = pctx.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        const v = mask[i];
+        previewData.data[i * 4] = v; previewData.data[i * 4 + 1] = v; previewData.data[i * 4 + 2] = v; previewData.data[i * 4 + 3] = 255;
+      }
+      pctx.putImageData(previewData, 0, 0);
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `<div>${poseName} · ${region}</div>`;
+      wrap.appendChild(preview);
+      masksDiv.appendChild(wrap);
+    }
+  }
+
+  const dnas = [
+    { nome: 'Galo 001 (baixo/magro, altivo)', dorso: '#8B3E22', peito: '#3E1F16', cauda: '#142B26', pattern: null, heightScale: 0.88, bulkScale: 0.94, headTilt: -7 },
+    { nome: 'Galo 002 (padrao, neutro)', dorso: '#2E1B14', peito: '#1C120E', cauda: '#0E0C0B', pattern: null, heightScale: 1, bulkScale: 1, headTilt: 0 },
+    { nome: 'Galo 003 (alto/esguio, cansado)', dorso: '#C9962E', peito: '#1B1712', cauda: '#8A6A20', pattern: { seed: 4471, spot: '#F2E7C8', count: 5 }, heightScale: 1.1, bulkScale: 0.95, headTilt: 8 },
+    { nome: 'Galo 004 (robusto, desafiador)', dorso: '#160C0C', peito: '#7A2E20', cauda: '#3A2415', pattern: null, heightScale: 1.02, bulkScale: 1.14, headTilt: -4 },
+    { nome: 'Galo 005 (carijo)', dorso: '#5A3D22', peito: '#2A1C10', cauda: '#241A12', pattern: { seed: 771, count: 26, spot: '#E8DCC0', style: 'carijo' }, heightScale: 0.97, bulkScale: 1.05, headTilt: 3 },
+  ];
+
+  const gridPoses = document.getElementById('gridPoses');
+  for (const dna of dnas) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const posesRow = document.createElement('div');
+    posesRow.className = 'poses';
+    for (const poseName of Object.keys(POSES)) posesRow.appendChild(renderDna(poseData[poseName], dna));
+    card.appendChild(posesRow);
+    const label = document.createElement('small');
+    label.textContent = `${dna.nome}\ndorso ${dna.dorso} · peito ${dna.peito} · cauda ${dna.cauda}`;
+    if (dna.headTilt) label.textContent += `\ncabeca ${dna.headTilt}°`;
+    card.appendChild(label);
+    gridPoses.appendChild(card);
+  }
+
+  // --- Secao 2: heranca -----------------------------------------------------
+  const pai = { nome: 'Pai', dorso: '#8B3E22', peito: '#160C0C', cauda: '#142B26', pattern: null, heightScale: 0.92, bulkScale: 1.12, headTilt: -8 };
+  const mae = { nome: 'Mãe', dorso: '#C9962E', peito: '#3E1F16', cauda: '#8A6A20', pattern: { seed: 1, count: 5, spot: '#F2E7C8' }, heightScale: 1.12, bulkScale: 0.9, headTilt: 6 };
+  const gridBreeding = document.getElementById('gridBreeding');
+  for (const parent of [pai, mae]) {
+    const card = document.createElement('div');
+    card.className = 'card parent single';
+    card.appendChild(renderDna(poseData.idle, parent));
+    const label = document.createElement('small');
+    label.textContent = `${parent.nome}\ndorso ${parent.dorso} · peito ${parent.peito} · cauda ${parent.cauda}`;
+    card.appendChild(label);
+    gridBreeding.appendChild(card);
+  }
+  for (let i = 0; i < 4; i++) {
+    const filho = gerarFilhote(pai, mae, 7000 + i * 137);
+    const card = document.createElement('div');
+    card.className = 'card single';
+    card.appendChild(renderDna(poseData.idle, filho));
+    const label = document.createElement('small');
+    label.textContent = `Filhote ${i + 1}\ndorso ${filho.dorso} · peito ${filho.peito} · cauda ${filho.cauda}${filho.pattern ? ' · malhado' : ''}\naltura x${filho.heightScale.toFixed(2)} · porte x${filho.bulkScale.toFixed(2)} · cabeca ${filho.headTilt.toFixed(1)}°`;
+    card.appendChild(label);
+    gridBreeding.appendChild(card);
+  }
+
+  // --- Secao 3: outra anatomia (galo topo de linha) + variacao de porte -----
+  const topDnas = [
+    { nome: 'Topo A (padrao)', dorso: '#C9962E', peito: '#241A12', cauda: '#123842', pattern: null, heightScale: 1, bulkScale: 1, headTilt: 0 },
+    { nome: 'Topo B (mais escuro, baixo/robusto, desafiador)', dorso: '#5B3A16', peito: '#140E0A', cauda: '#0B2226', pattern: null, heightScale: 0.86, bulkScale: 1.18, headTilt: -9 },
+    { nome: 'Topo C (dourado claro, alto/esguio, altivo)', dorso: '#E0B860', peito: '#3A2A16', cauda: '#1E5560', pattern: { seed: 55, count: 6, spot: '#FFF6DE' }, heightScale: 1.14, bulkScale: 0.9, headTilt: -6 },
+  ];
+  const gridTop = document.getElementById('gridTop');
+  for (const dna of topDnas) {
+    const card = document.createElement('div');
+    card.className = 'card single';
+    card.appendChild(renderDna(poseData.top, dna));
+    const label = document.createElement('small');
+    label.textContent = `${dna.nome}\ndorso ${dna.dorso} · peito ${dna.peito} · cauda ${dna.cauda}\naltura x${dna.heightScale} · porte x${dna.bulkScale}`;
+    card.appendChild(label);
+    gridTop.appendChild(card);
+  }
+
+  document.getElementById('status').textContent = 'Pronto.';
+})();
+</script>
+</body>
+</html>
